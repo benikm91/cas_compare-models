@@ -87,6 +87,22 @@ def create_cnn(meta, image_shape):
     return cnn
 
 
+def create_big_cnn(meta, image_shape):
+    cnn = Sequential()
+    cnn.add(Input(shape=meta["X_shape_"][1:]))
+    cnn.add(Reshape(image_shape))  # Reshape 1D-pixel-vector to 3D image
+    cnn.add(Conv2D(32, kernel_size=(3, 3), activation="relu"))
+    cnn.add(MaxPooling2D(pool_size=(2, 2)))
+    cnn.add(Conv2D(64, kernel_size=(3, 3), activation="relu"))
+    cnn.add(Conv2D(64, kernel_size=(3, 3), activation="relu"))
+    cnn.add(MaxPooling2D(pool_size=(2, 2)))
+    cnn.add(Conv2D(256, kernel_size=(3, 3), activation="relu"))
+    cnn.add(GlobalAveragePooling2D())
+    cnn.add(Dense(meta["n_classes_"], activation='softmax'))
+    print(cnn.summary())
+    return cnn
+
+
 if __name__ == "__main__":
     # config
     random_state = 42
@@ -107,6 +123,15 @@ if __name__ == "__main__":
         'RF': make_pipeline(preprocess, RandomForestClassifier(), memory=cache_memory),
         'CNN': make_pipeline(preprocess, KerasClassifier(
             model=create_cnn,
+            image_shape=(28, 28, 1),
+            epochs=50,
+            loss="sparse_categorical_crossentropy",
+            batch_size=128,
+            verbose=0,
+            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3)]
+        ), memory=cache_memory),
+        'CNN_BIG': make_pipeline(preprocess, KerasClassifier(
+            model=create_big_cnn,
             image_shape=(28, 28, 1),
             epochs=50,
             loss="sparse_categorical_crossentropy",
@@ -158,17 +183,22 @@ if __name__ == "__main__":
     )
     hps['PCA+RF'] = { **hps['PCA'], **hps['RF'] }
     hps['CNN'] = dict()
+    hps['CNN_BIG'] = dict()
     hps['PCA+CNN'] = { **hps['PCA'], **hps['CNN'] }
 
     total_start = timer()
     start_datetime_str = time.strftime("%Y%m%d-%H%M%S")
 
-    for subset_percentage in np.logspace(np.log2(0.005), np.log2(1), num=10, base=2)[9:]:
+    subset_model = {
+        'CNN_BIG': models['CNN_BIG']
+    }
+
+    for subset_percentage in np.logspace(np.log2(0.005), np.log2(1), num=10, base=2):
         n_samples = int(X.shape[0] * subset_percentage)
         result = dict()
         iter_start = timer()
         print(f"Start {n_samples}")
-        for model_name, model in models.items():
+        for model_name, model in subset_model.items():
             hyperparameter_search_space = hps[model_name]
             model_print = f"{model_name} for {n_samples} samples ({subset_percentage * 100:.2f}%)"
             print(model_print, end="")

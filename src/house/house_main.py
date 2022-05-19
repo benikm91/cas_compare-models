@@ -5,6 +5,7 @@ import pickle
 import time
 from pathlib import Path
 
+from catboost import CatBoostClassifier
 from silence_tensorflow import silence_tensorflow
 silence_tensorflow()
 
@@ -16,7 +17,7 @@ from scipy.stats import loguniform, uniform, randint
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import make_column_transformer
 from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.experimental import enable_halving_search_cv
 enable_halving_search_cv
 from sklearn.linear_model import LogisticRegression
@@ -139,6 +140,8 @@ if __name__ == "__main__":
         'KNN': make_pipeline(preprocess, KNeighborsClassifier(), memory=cache_memory),
         'DT': make_pipeline(preprocess, DecisionTreeClassifier(), memory=cache_memory),
         'RF': make_pipeline(preprocess, RandomForestClassifier(), memory=cache_memory),
+        'GB': make_pipeline(preprocess, GradientBoostingClassifier(), memory=cache_memory),
+        'GB_CB': make_pipeline(CatBoostClassifier(verbose=0), memory=cache_memory),
         'NN': make_pipeline(preprocess, KerasClassifier(
             model=create_nn,
             epochs=50,
@@ -197,6 +200,17 @@ if __name__ == "__main__":
         randomforestclassifier__n_estimators=randint(10, 1000),
         randomforestclassifier__max_depth=[2, 4, 6, 8, 10, 12, None],
     )
+    hps['GB'] = dict(
+        # TODO check parameters
+        gradientboostingclassifier__n_estimators=randint(10, 1000),
+        gradientboostingclassifier__max_depth=[2, 4, 6, 8, 10, 12, None],
+    )
+    hps['GB_CB'] = dict(
+        # TODO check parameters
+        catboostclassifier__iterations = randint(10, 1000),
+        catboostclassifier__learning_rate = uniform(0.1, 0.5),
+        catboostclassifier__depth = [2, 4, 6, 8, 10, 12],
+    )
     hps['PCA+RF'] = { **hps['PCA'], **hps['RF'] }
     hps['NN'] = dict(
         # kerasclassifier__model__dropout_rate=uniform(0.0, 1.0)
@@ -206,12 +220,16 @@ if __name__ == "__main__":
     total_start = timer()
     start_datetime_str = time.strftime("%Y%m%d-%H%M%S")
 
-    for subset_percentage in np.logspace(np.log2(0.005), np.log2(1), num=10, base=2)[9:]:
+    subset_model = {
+        'GB_CB': models['GB_CB']
+    }
+
+    for subset_percentage in np.logspace(np.log2(0.005), np.log2(1), num=10, base=2):
         n_samples = int(X.shape[0] * subset_percentage)
         result = dict()
         iter_start = timer()
         print(f"Start {n_samples}")
-        for model_name, model in models.items():
+        for model_name, model in subset_model.items():
             hyperparameter_search_space = hps[model_name]
             model_print = f"{model_name} for {n_samples} samples ({subset_percentage * 100:.2f}%)"
             print(model_print, end="")
